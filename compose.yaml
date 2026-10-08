@@ -42,6 +42,10 @@ services:
       # 启动时自动把镜像新增的配置键写回 config.json（升级版本不再出现 [Config] WARN）
       CONFIG_AUTO_SYNC: "true"
 
+      # ★ 注意：这里刻意不设置任何 CONFIG_* 行为变量（任务开关/搜索/通知等）。
+      #   这些配置统一在 Web 管理台「脚本配置」里修改（保存到 config/config.json），
+      #   否则环境变量会在容器每次重启时覆盖网页里保存的值。
+
       # ── 账号配置（敏感内容放 .env）──
       # 也可以不配 .env 账号，直接在 Web 管理台"账号管理"里添加（保存到 config/accounts.json，优先级更高）
       ACCOUNT_1_EMAIL: "${ACCOUNT_1_EMAIL:-}"
@@ -57,82 +61,6 @@ services:
       ACCOUNT_2_LANG_CODE: "zh-CN"
       # ACCOUNT_2_TOTP_SECRET: "${ACCOUNT_2_TOTP_SECRET}"
       # ACCOUNT_2_RECOVERY_EMAIL: "${ACCOUNT_2_RECOVERY_EMAIL}"
-
-      # ── 基础配置 ──
-      CONFIG_CLUSTERS: "4"
-      CONFIG_DEBUG_LOGS: "false"
-      CONFIG_ERROR_DIAGNOSTICS: "true"
-      CONFIG_ENSURE_STREAK_PROTECTION: "true"
-      CONFIG_AUTO_CLAIM_PUNCHCARD_REWARDS: "false"
-      CONFIG_SKIP_NON_POINT_TASKS: "true"
-      CONFIG_GLOBAL_TIMEOUT: "30sec"
-      CONFIG_ACCOUNT_DELAY_MIN: "1min"
-      CONFIG_ACCOUNT_DELAY_MAX: "3min"
-      # Microsoft 提示账号风控警告时仍继续运行（不推荐，默认关闭）
-      CONFIG_CONTINTUE_ON_BOT_WARNING: "false"
-
-      # ── 任务开关 ──
-      CONFIG_WORKER_DAILY_SET: "true"
-      CONFIG_WORKER_CLAIM_BONUS_POINTS: "true"
-      CONFIG_WORKER_MORE_PROMOTIONS: "true"
-      CONFIG_WORKER_PUNCH_CARDS: "true"
-      CONFIG_WORKER_APP_PROMOTIONS: "true"
-      CONFIG_WORKER_DESKTOP_SEARCH: "true"
-      CONFIG_WORKER_MOBILE_SEARCH: "true"
-      CONFIG_WORKER_BONUS_SEARCHES: "false"
-      CONFIG_WORKER_DAILY_CHECKIN: "true"
-      CONFIG_WORKER_READ_TO_EARN: "true"
-      CONFIG_WORKER_ACTIVATE_SEARCH_PERK: "true"
-      # 国内账号暂未普遍开放，默认关闭
-      CONFIG_WORKER_VISUAL_SEARCH: "false"
-
-      # ── 活动开关 ──
-      CONFIG_ACTIVITY_URL_REWARD: "true"
-      CONFIG_ACTIVITY_SEARCH_ON_BING: "true"
-
-      # ── 搜索行为 ──
-      CONFIG_SEARCH_DELAY_MIN: "30sec"
-      CONFIG_SEARCH_DELAY_MAX: "1min"
-      CONFIG_SEARCH_READ_DELAY_MIN: "30sec"
-      CONFIG_SEARCH_READ_DELAY_MAX: "1min"
-      CONFIG_SEARCH_VISIT_TIME: "10sec"
-      CONFIG_SEARCH_PARALLEL: "true"
-      CONFIG_SEARCH_CLUSTER: "true"
-      CONFIG_SEARCH_SCROLL_RANDOM: "false"
-      CONFIG_SEARCH_CLICK_RANDOM: "false"
-      CONFIG_SEARCH_RUN_ON_ZERO_POINTS: "false"
-      CONFIG_SEARCH_MAX_BONUS_SEARCHES: "110"
-      CONFIG_SEARCH_QUERY_ENGINES: "china,local"
-      CONFIG_SEARCH_ON_BING_LOCAL: "false"
-
-      # ── 实验功能（默认关闭）──
-      CONFIG_EXPERIMENTAL_API_SEARCH: "false"
-      CONFIG_EXPERIMENTAL_API_SEARCH_ON_BING: "false"
-      CONFIG_EXPERIMENTAL_BLOCK_MEDIA: "false"
-      CONFIG_EXPERIMENTAL_EDGE_BROWSING: "false"
-
-      # ── 代理 ──
-      CONFIG_PROXY_QUERY_ENGINE: "true"
-
-      # ── PushPlus 任务完成通知（在 .env 填 PUSHPLUS_TOKEN 并把 ENABLED 改 true）──
-      CONFIG_PUSHPLUS_ENABLED: "${PUSHPLUS_ENABLED:-false}"
-      CONFIG_PUSHPLUS_TOKEN: "${PUSHPLUS_TOKEN:-}"
-      CONFIG_PUSHPLUS_TITLE: "MSRPilot"
-      CONFIG_PUSHPLUS_TEMPLATE: "html"
-      CONFIG_PUSHPLUS_CHANNEL: "wechat"
-
-      # ── Telegram 可选 ──
-      # CONFIG_TELEGRAM_ENABLED: "true"
-      # CONFIG_TELEGRAM_BOT_TOKEN: ""
-      # CONFIG_TELEGRAM_CHAT_ID: ""
-
-      # ── ntfy 可选 ──
-      # CONFIG_NTFY_ENABLED: "true"
-      # CONFIG_NTFY_URL: "https://ntfy.sh"
-      # CONFIG_NTFY_TOPIC: "my-rewards-alerts"
-      # CONFIG_NTFY_TOKEN: ""
-      # CONFIG_NTFY_TITLE: "MSRPilot"
-      # CONFIG_NTFY_PRIORITY: "3"
 
     healthcheck:
       test: ["CMD-SHELL", "scripts/docker/healthcheck.sh"]
