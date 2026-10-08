@@ -9,9 +9,11 @@
 #
 # compose.yaml 与 .env 模板均从 GitHub 仓库下载（脚本不内置任何副本）:
 #   https://github.com/DemonRR/msrpilot-cn  (master 分支)
-#   可用环境变量换成镜像加速地址:
-#     MSRPILOT_COMPOSE_URL=<加速链接>   → compose.yaml
-#     MSRPILOT_ENV_URL=<加速链接>       → env.example（.env 模板）
+#   直连失败会自动通过 gh-proxy.com 加速重试；
+#   可用环境变量自定义:
+#     MSRPILOT_GH_PROXY=<加速前缀>      → 默认 https://gh-proxy.com/
+#     MSRPILOT_COMPOSE_URL=<完整链接>    → compose.yaml（优先于上面规则）
+#     MSRPILOT_ENV_URL=<完整链接>        → env.example（优先于上面规则）
 #   下载失败会终止安装并给出解决办法。
 #
 # 脚本会:
@@ -24,8 +26,11 @@
 set -euo pipefail
 
 # ── 默认值（可用环境变量覆盖）────────────────────────────────────────────
-COMPOSE_URL="${MSRPILOT_COMPOSE_URL:- https://gh-proxy.com/https://raw.githubusercontent.com/DemonRR/msrpilot-cn/master/compose.yaml}"
-ENV_URL="${MSRPILOT_ENV_URL:- https://gh-proxy.com/https://raw.githubusercontent.com/DemonRR/msrpilot-cn/master/env.example}"
+COMPOSE_URL="${MSRPILOT_COMPOSE_URL:-https://raw.githubusercontent.com/DemonRR/msrpilot-cn/master/compose.yaml}"
+ENV_URL="${MSRPILOT_ENV_URL:-https://raw.githubusercontent.com/DemonRR/msrpilot-cn/master/env.example}"
+# GitHub 直连失败时的自动加速前缀（结尾自动补 /）
+GH_PROXY="${MSRPILOT_GH_PROXY:-https://gh-proxy.com/}"
+GH_PROXY="${GH_PROXY%/}/"
 DEFAULT_TZ="Asia/Shanghai"
 DEFAULT_CRON="30 7 * * *;30 15 * * *"
 API_CONTAINER_PORT="3010"
@@ -349,22 +354,31 @@ gh_fetch() { # $1=url $2=dest → 成功返回 0
     fi
 }
 
+# 直连失败时自动走 gh-proxy.com 加速重试
+gh_fetch_smart() { # $1=url $2=dest → 成功返回 0
+    gh_fetch "$1" "$2" && return 0
+    warn "GitHub 直连失败，尝试通过 ${GH_PROXY} 加速重试 ..."
+    gh_fetch "${GH_PROXY}$1" "$2"
+}
+
 if [ "$MODE" = "install" ]; then
-    if ! gh_fetch "$COMPOSE_URL" "$INSTALL_DIR/compose.yaml" || ! grep -q '^services:' "$INSTALL_DIR/compose.yaml"; then
+    if ! gh_fetch_smart "$COMPOSE_URL" "$INSTALL_DIR/compose.yaml" || ! grep -q '^services:' "$INSTALL_DIR/compose.yaml"; then
         rm -f "$INSTALL_DIR/compose.yaml"
-        die "compose.yaml 下载失败，服务器无法访问 GitHub。
+        die "compose.yaml 下载失败（直连与 gh-proxy 加速均不可用）。
       解决办法（任选其一）后重新运行本脚本:
-      1) 使用加速地址:  MSRPILOT_COMPOSE_URL=<加速链接> bash $0
-      2) 手动下载 compose.yaml 放入 ${INSTALL_DIR} 后重新运行"
+      1) 换其他加速前缀:   MSRPILOT_GH_PROXY=<加速前缀> bash $0
+      2) 指定完整下载链接: MSRPILOT_COMPOSE_URL=<链接> bash $0
+      3) 手动下载 compose.yaml 放入 ${INSTALL_DIR} 后重新运行"
     fi
     ok "已下载 compose.yaml"
 
-    if ! gh_fetch "$ENV_URL" "$INSTALL_DIR/.env.example" || ! grep -q '^API_TOKEN=' "$INSTALL_DIR/.env.example"; then
+    if ! gh_fetch_smart "$ENV_URL" "$INSTALL_DIR/.env.example" || ! grep -q '^API_TOKEN=' "$INSTALL_DIR/.env.example"; then
         rm -f "$INSTALL_DIR/.env.example"
-        die ".env 模板下载失败，服务器无法访问 GitHub。
+        die ".env 模板下载失败（直连与 gh-proxy 加速均不可用）。
       解决办法（任选其一）后重新运行本脚本:
-      1) 使用加速地址:  MSRPILOT_ENV_URL=<加速链接> bash $0
-      2) 手动下载 env.example 放入 ${INSTALL_DIR} 并改名为 .env.example 后重新运行"
+      1) 换其他加速前缀:   MSRPILOT_GH_PROXY=<加速前缀> bash $0
+      2) 指定完整下载链接: MSRPILOT_ENV_URL=<链接> bash $0
+      3) 手动下载 env.example 放入 ${INSTALL_DIR} 并改名为 .env.example 后重新运行"
     fi
     ok "已下载 .env 模板（.env.example）"
 fi
