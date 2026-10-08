@@ -1,7 +1,7 @@
 services:
   ms-rewards-cn:
     image: demonr/msrpilot-cn:2.1.1
-    container_name: ms-rewards-cn
+    container_name: msrpilot-cn
     restart: unless-stopped
 
     ports:
