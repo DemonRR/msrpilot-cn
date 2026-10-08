@@ -522,20 +522,28 @@ do_install() {
     (cd "$INSTALL_DIR" && $SUDO $COMPOSE -f compose.yaml config -q) || die "compose.yaml 校验失败，请检查上方报错"
     ok "配置就绪: compose.yaml + .env（权限 600）"
 
-    # 拉取镜像：全新安装且本地已有 → 跳过；否则拉取（失败可继续用本地镜像）
+    # 拉取镜像：全新安装且本地已有 → 跳过；同仓库其他标签（如 :latest）→ 询问标记复用；
+    # 都没有 → 拉取（失败可继续用本地镜像）
     IMAGE_REF="$(grep -m1 -E '^[[:space:]]*image:' "$COMPOSE_FILE" | awk '{print $2}' | tr -d '"' || true)"
+    REPO="${IMAGE_REF%%:*}"
     echo ""
     if $SUDO docker image inspect "$IMAGE_REF" >/dev/null 2>&1; then
         ok "本地已存在镜像 ${IMAGE_REF}，跳过拉取"
     else
-        info "拉取镜像 ${IMAGE_REF}（可能需要几分钟；国内网络慢可配置镜像加速）..."
-        if ! (cd "$INSTALL_DIR" && $SUDO $COMPOSE pull); then
-            warn "镜像拉取失败。可配置 Docker Hub 镜像加速后重试，例如:"
-            echo "  $SUDO tee /etc/docker/daemon.json <<'CFG'"
-            echo "  { \"registry-mirrors\": [\"https://docker.1panel.live\", \"https://docker.m.daocloud.io\"] }"
-            echo "  CFG"
-            echo "  $SUDO systemctl restart docker && bash $0"
-            die "已中止。按上方提示配置加速后重新运行即可（已完成的下载会续传）"
+        ALT_IMG="$($SUDO docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep -E "^${REPO}:" | grep -vE "^${IMAGE_REF}\$" | head -1 || true)"
+        if [ -n "$ALT_IMG" ] && ask_yes "本地已有 ${ALT_IMG}（compose 需要 ${IMAGE_REF}）。直接标记为 ${IMAGE_REF} 使用，不再联网拉取？" y; then
+            $SUDO docker tag "$ALT_IMG" "$IMAGE_REF"
+            ok "已标记 ${ALT_IMG} → ${IMAGE_REF}"
+        else
+            info "拉取镜像 ${IMAGE_REF}（可能需要几分钟；国内网络慢可配置镜像加速）..."
+            if ! (cd "$INSTALL_DIR" && $SUDO $COMPOSE pull); then
+                warn "镜像拉取失败。可配置 Docker Hub 镜像加速后重试，例如:"
+                echo "  $SUDO tee /etc/docker/daemon.json <<'CFG'"
+                echo "  { \"registry-mirrors\": [\"https://docker.1panel.live\", \"https://docker.m.daocloud.io\"] }"
+                echo "  CFG"
+                echo "  $SUDO systemctl restart docker && bash $0"
+                die "已中止。按上方提示配置加速后重新运行即可（已完成的下载会续传）"
+            fi
         fi
     fi
 
