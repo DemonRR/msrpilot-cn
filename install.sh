@@ -24,8 +24,8 @@
 set -euo pipefail
 
 # ── 默认值（可用环境变量覆盖）────────────────────────────────────────────
-COMPOSE_URL="${MSRPILOT_COMPOSE_URL:-https://raw.githubusercontent.com/DemonRR/msrpilot-cn/master/compose.yaml}"
-ENV_URL="${MSRPILOT_ENV_URL:-https://raw.githubusercontent.com/DemonRR/msrpilot-cn/master/env.example}"
+COMPOSE_URL="${MSRPILOT_COMPOSE_URL:- https://gh-proxy.com/https://raw.githubusercontent.com/DemonRR/msrpilot-cn/master/compose.yaml}"
+ENV_URL="${MSRPILOT_ENV_URL:- https://gh-proxy.com/https://raw.githubusercontent.com/DemonRR/msrpilot-cn/master/env.example}"
 DEFAULT_TZ="Asia/Shanghai"
 DEFAULT_CRON="30 7 * * *;30 15 * * *"
 API_CONTAINER_PORT="3010"
