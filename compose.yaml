@@ -1,5 +1,5 @@
 services:
-  ms-rewards-cn:
+  msrpilot-cn:
     image: demonr/msrpilot-cn:1.0.0
     container_name: msrpilot-cn
     restart: unless-stopped
