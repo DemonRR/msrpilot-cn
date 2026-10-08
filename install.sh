@@ -26,8 +26,9 @@
 set -euo pipefail
 
 # ── 默认值（可用环境变量覆盖）────────────────────────────────────────────
-COMPOSE_URL="${MSRPILOT_COMPOSE_URL:-https://raw.githubusercontent.com/DemonRR/msrpilot-cn/master/compose.yaml}"
-ENV_URL="${MSRPILOT_ENV_URL:-https://raw.githubusercontent.com/DemonRR/msrpilot-cn/master/env.example}"
+# 环境变量里可能混入粘贴带来的空格/回车符（curl 会报 URL malformed），统一剥掉
+COMPOSE_URL="$(printf '%s' "${MSRPILOT_COMPOSE_URL:-https://raw.githubusercontent.com/DemonRR/msrpilot-cn/master/compose.yaml}" | tr -d ' \r')"
+ENV_URL="$(printf '%s' "${MSRPILOT_ENV_URL:-https://raw.githubusercontent.com/DemonRR/msrpilot-cn/master/env.example}" | tr -d ' \r')"
 # GitHub 直连失败时的自动加速前缀（结尾自动补 /）
 GH_PROXY="${MSRPILOT_GH_PROXY:-https://gh-proxy.com/}"
 GH_PROXY="${GH_PROXY%/}/"
