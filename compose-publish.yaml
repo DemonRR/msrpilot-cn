@@ -1,0 +1,73 @@
+services:
+  ms-rewards-cn:
+    image: demonr/msrpilot-cn:2.1.1
+    container_name: msrpilot-cn
+    restart: unless-stopped
+
+    ports:
+      - "3010:3010"                    # Web 管理台（API_MODE=true 时使用）
+
+    volumes:
+      - ./config:/usr/src/microsoft-rewards-script/config
+      - ./sessions:/usr/src/microsoft-rewards-script/sessions
+      - ./diagnostics:/usr/src/microsoft-rewards-script/diagnostics
+
+    environment:
+      TZ: "Asia/Shanghai"
+      NODE_ENV: "production"
+
+      # ── 定时任务 ──
+      # 多个定时用英文分号分隔；以下为每天 07:30 和 15:30
+      CRON_SCHEDULES: "30 7 * * *;30 15 * * *"
+
+      # true：容器启动后立即运行一次；false：只按定时运行
+      RUN_ON_START: "false"
+      SKIP_RANDOM_SLEEP: "false"
+      MIN_SLEEP_MINUTES: "5"
+      MAX_SLEEP_MINUTES: "50"
+      STUCK_PROCESS_TIMEOUT_HOURS: "8"
+
+      # ── 授权（Docker 与 Win GUI 授权不互通，按平台绑定）──
+      # 留空 = 先用 24 小时免费试用；正式使用填授权码
+      LICENSE_KEY: "${LICENSE_KEY:-}"
+      # 可选：手动固定机器码（换服务器/重建容器时保持授权不变，与 GUI 授权无关）
+      LICENSE_MACHINE_CODE: "${LICENSE_MACHINE_CODE:-}"
+
+      # ── Web 管理台 ──
+      # 浏览器打开 http://服务器IP:3010/ ；API_TOKEN 必须设置强随机值，否则拒绝启动
+      API_MODE: "true"
+      API_TOKEN: "${API_TOKEN:?请在 .env 中设置 API_TOKEN}"
+
+      # ── 配置自动补全 ──
+      # 启动时自动把镜像新增的配置键写回 config.json（升级版本不再出现 [Config] WARN）
+      CONFIG_AUTO_SYNC: "true"
+
+      # ★ 注意：这里刻意不设置任何 CONFIG_* 行为变量（任务开关/搜索/通知等）。
+      #   这些配置统一在 Web 管理台「脚本配置」里修改（保存到 config/config.json），
+      #   否则环境变量会在容器每次重启时覆盖网页里保存的值。
+
+      # ── 账号配置（敏感内容放 .env）──
+      # 也可以不配 .env 账号，直接在 Web 管理台"账号管理"里添加（保存到 config/accounts.json，优先级更高）
+      ACCOUNT_1_EMAIL: "${ACCOUNT_1_EMAIL:-}"
+      ACCOUNT_1_PASSWORD: "${ACCOUNT_1_PASSWORD:-}"
+      ACCOUNT_1_GEO_LOCALE: "CN"
+      ACCOUNT_1_LANG_CODE: "zh-CN"
+      ACCOUNT_1_TOTP_SECRET: "${ACCOUNT_1_TOTP_SECRET:-}"
+      # ACCOUNT_1_RECOVERY_EMAIL: "${ACCOUNT_1_RECOVERY_EMAIL}"
+
+      ACCOUNT_2_EMAIL: "${ACCOUNT_2_EMAIL:-}"
+      ACCOUNT_2_PASSWORD: "${ACCOUNT_2_PASSWORD:-}"
+      ACCOUNT_2_GEO_LOCALE: "CN"
+      ACCOUNT_2_LANG_CODE: "zh-CN"
+      # ACCOUNT_2_TOTP_SECRET: "${ACCOUNT_2_TOTP_SECRET}"
+      # ACCOUNT_2_RECOVERY_EMAIL: "${ACCOUNT_2_RECOVERY_EMAIL}"
+
+    healthcheck:
+      test: ["CMD-SHELL", "scripts/docker/healthcheck.sh"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+    security_opt:
+      - no-new-privileges:true

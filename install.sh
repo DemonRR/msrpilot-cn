@@ -7,10 +7,12 @@
 #   bash install.sh --dir /opt/msrpilot-cn
 #   bash install.sh --dir=/opt/msrpilot-cn
 #
-# compose.yaml 默认从 GitHub 仓库下载:
+# compose.yaml 与 .env 模板均从 GitHub 仓库下载（脚本不内置任何副本）:
 #   https://github.com/DemonRR/msrpilot-cn  (master 分支)
-#   可用环境变量 MSRPILOT_COMPOSE_URL 换成镜像加速地址；
-#   下载失败时自动回退到脚本内置的默认副本（与仓库一致）。
+#   可用环境变量换成镜像加速地址:
+#     MSRPILOT_COMPOSE_URL=<加速链接>   → compose.yaml
+#     MSRPILOT_ENV_URL=<加速链接>       → env.example（.env 模板）
+#   下载失败会终止安装并给出解决办法。
 #
 # 脚本会:
 #   1. 检查 / 安装 Docker 与 Docker Compose
@@ -23,6 +25,7 @@ set -euo pipefail
 
 # ── 默认值（可用环境变量覆盖）────────────────────────────────────────────
 COMPOSE_URL="${MSRPILOT_COMPOSE_URL:-https://raw.githubusercontent.com/DemonRR/msrpilot-cn/master/compose.yaml}"
+ENV_URL="${MSRPILOT_ENV_URL:-https://raw.githubusercontent.com/DemonRR/msrpilot-cn/master/env.example}"
 DEFAULT_TZ="Asia/Shanghai"
 DEFAULT_CRON="30 7 * * *;30 15 * * *"
 API_CONTAINER_PORT="3010"
@@ -38,6 +41,22 @@ ok()    { printf "${C_G}[ OK ]${C_0} %s\n" "$*"; }
 warn()  { printf "${C_Y}[WARN]${C_0} %s\n" "$*"; }
 err()   { printf "${C_R}[FAIL]${C_0} %s\n" "$*" >&2; }
 die()   { err "$*"; exit 1; }
+
+# ── 执行方式保护 ────────────────────────────────────────────────────────
+# 本脚本是交互式的：`curl ... | bash` 会让 read 把脚本正文当成用户输入。
+# 检测到脚本本身来自 stdin 时立即终止并给出正确用法。
+case "$0" in
+    bash|sh|dash)
+        if [ ! -t 0 ]; then
+            err "脚本正通过 stdin 执行（如 curl ... | bash），交互式输入会失效。"
+            err "正确用法:  bash <(curl -fsSL <脚本地址>)"
+            err "或者:      curl -fsSL <脚本地址> -o install.sh && bash install.sh"
+            exit 1
+        fi
+        ;;
+esac
+# 用 sh 启动时自动切到 bash（脚本依赖 bash 特性）
+[ -n "${BASH_VERSION:-}" ] || exec bash "$0" "$@"
 
 usage() {
     sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'
@@ -318,179 +337,36 @@ else
 fi
 
 ###############################################################################
-# 4a. 下载 compose.yaml（GitHub 外链，失败时回退内置副本）
+# 4a. 从 GitHub 下载 compose.yaml 与 .env 模板（不再内置任何副本）
 ###############################################################################
-write_compose_fallback() {
-    # 与 https://raw.githubusercontent.com/DemonRR/msrpilot-cn/master/compose.yaml 保持一致
-    cat > "$1" <<'MSRPILOT_COMPOSE_TEMPLATE'
-services:
-  ms-rewards-cn:
-    image: demonr/msrpilot-cn:2.1.1
-    container_name: msrpilot-cn
-    restart: unless-stopped
-
-    ports:
-      - "3010:3010"                    # Web 管理台（API_MODE=true 时使用）
-
-    volumes:
-      - ./config:/usr/src/microsoft-rewards-script/config
-      - ./sessions:/usr/src/microsoft-rewards-script/sessions
-      - ./diagnostics:/usr/src/microsoft-rewards-script/diagnostics
-
-    environment:
-      TZ: "Asia/Shanghai"
-      NODE_ENV: "production"
-
-      # ── 定时任务 ──
-      # 多个定时用英文分号分隔；以下为每天 07:30 和 15:30
-      CRON_SCHEDULES: "30 7 * * *;30 15 * * *"
-
-      # true：容器启动后立即运行一次；false：只按定时运行
-      RUN_ON_START: "false"
-      SKIP_RANDOM_SLEEP: "false"
-      MIN_SLEEP_MINUTES: "5"
-      MAX_SLEEP_MINUTES: "50"
-      STUCK_PROCESS_TIMEOUT_HOURS: "8"
-
-      # ── 授权（Docker 与 Win GUI 授权不互通，按平台绑定）──
-      # 留空 = 先用 24 小时免费试用；正式使用填授权码
-      LICENSE_KEY: "${LICENSE_KEY:-}"
-      # 可选：手动固定机器码（换服务器/重建容器时保持授权不变，与 GUI 授权无关）
-      LICENSE_MACHINE_CODE: "${LICENSE_MACHINE_CODE:-}"
-
-      # ── Web 管理台 ──
-      # 浏览器打开 http://服务器IP:3010/ ；API_TOKEN 必须设置强随机值，否则拒绝启动
-      API_MODE: "true"
-      API_TOKEN: "${API_TOKEN:?请在 .env 中设置 API_TOKEN}"
-
-      # ── 配置自动补全 ──
-      # 启动时自动把镜像新增的配置键写回 config.json（升级版本不再出现 [Config] WARN）
-      CONFIG_AUTO_SYNC: "true"
-
-      # ── 账号配置（敏感内容放 .env）──
-      # 也可以不配 .env 账号，直接在 Web 管理台"账号管理"里添加（保存到 config/accounts.json，优先级更高）
-      ACCOUNT_1_EMAIL: "${ACCOUNT_1_EMAIL:-}"
-      ACCOUNT_1_PASSWORD: "${ACCOUNT_1_PASSWORD:-}"
-      ACCOUNT_1_GEO_LOCALE: "CN"
-      ACCOUNT_1_LANG_CODE: "zh-CN"
-      ACCOUNT_1_TOTP_SECRET: "${ACCOUNT_1_TOTP_SECRET:-}"
-      # ACCOUNT_1_RECOVERY_EMAIL: "${ACCOUNT_1_RECOVERY_EMAIL}"
-
-      ACCOUNT_2_EMAIL: "${ACCOUNT_2_EMAIL:-}"
-      ACCOUNT_2_PASSWORD: "${ACCOUNT_2_PASSWORD:-}"
-      ACCOUNT_2_GEO_LOCALE: "CN"
-      ACCOUNT_2_LANG_CODE: "zh-CN"
-      # ACCOUNT_2_TOTP_SECRET: "${ACCOUNT_2_TOTP_SECRET}"
-      # ACCOUNT_2_RECOVERY_EMAIL: "${ACCOUNT_2_RECOVERY_EMAIL}"
-
-      # ── 基础配置 ──
-      CONFIG_CLUSTERS: "4"
-      CONFIG_DEBUG_LOGS: "false"
-      CONFIG_ERROR_DIAGNOSTICS: "true"
-      CONFIG_ENSURE_STREAK_PROTECTION: "true"
-      CONFIG_AUTO_CLAIM_PUNCHCARD_REWARDS: "false"
-      CONFIG_SKIP_NON_POINT_TASKS: "true"
-      CONFIG_GLOBAL_TIMEOUT: "30sec"
-      CONFIG_ACCOUNT_DELAY_MIN: "1min"
-      CONFIG_ACCOUNT_DELAY_MAX: "3min"
-      # Microsoft 提示账号风控警告时仍继续运行（不推荐，默认关闭）
-      CONFIG_CONTINTUE_ON_BOT_WARNING: "false"
-
-      # ── 任务开关 ──
-      CONFIG_WORKER_DAILY_SET: "true"
-      CONFIG_WORKER_CLAIM_BONUS_POINTS: "true"
-      CONFIG_WORKER_MORE_PROMOTIONS: "true"
-      CONFIG_WORKER_PUNCH_CARDS: "true"
-      CONFIG_WORKER_APP_PROMOTIONS: "true"
-      CONFIG_WORKER_DESKTOP_SEARCH: "true"
-      CONFIG_WORKER_MOBILE_SEARCH: "true"
-      CONFIG_WORKER_BONUS_SEARCHES: "false"
-      CONFIG_WORKER_DAILY_CHECKIN: "true"
-      CONFIG_WORKER_READ_TO_EARN: "true"
-      CONFIG_WORKER_ACTIVATE_SEARCH_PERK: "true"
-      # 国内账号暂未普遍开放，默认关闭
-      CONFIG_WORKER_VISUAL_SEARCH: "false"
-
-      # ── 活动开关 ──
-      CONFIG_ACTIVITY_URL_REWARD: "true"
-      CONFIG_ACTIVITY_SEARCH_ON_BING: "true"
-
-      # ── 搜索行为 ──
-      CONFIG_SEARCH_DELAY_MIN: "30sec"
-      CONFIG_SEARCH_DELAY_MAX: "1min"
-      CONFIG_SEARCH_READ_DELAY_MIN: "30sec"
-      CONFIG_SEARCH_READ_DELAY_MAX: "1min"
-      CONFIG_SEARCH_VISIT_TIME: "10sec"
-      CONFIG_SEARCH_PARALLEL: "true"
-      CONFIG_SEARCH_CLUSTER: "true"
-      CONFIG_SEARCH_SCROLL_RANDOM: "false"
-      CONFIG_SEARCH_CLICK_RANDOM: "false"
-      CONFIG_SEARCH_RUN_ON_ZERO_POINTS: "false"
-      CONFIG_SEARCH_MAX_BONUS_SEARCHES: "110"
-      CONFIG_SEARCH_QUERY_ENGINES: "china,local"
-      CONFIG_SEARCH_ON_BING_LOCAL: "false"
-
-      # ── 实验功能（默认关闭）──
-      CONFIG_EXPERIMENTAL_API_SEARCH: "false"
-      CONFIG_EXPERIMENTAL_API_SEARCH_ON_BING: "false"
-      CONFIG_EXPERIMENTAL_BLOCK_MEDIA: "false"
-      CONFIG_EXPERIMENTAL_EDGE_BROWSING: "false"
-
-      # ── 代理 ──
-      CONFIG_PROXY_QUERY_ENGINE: "true"
-
-      # ── PushPlus 任务完成通知（在 .env 填 PUSHPLUS_TOKEN 并把 ENABLED 改 true）──
-      CONFIG_PUSHPLUS_ENABLED: "${PUSHPLUS_ENABLED:-false}"
-      CONFIG_PUSHPLUS_TOKEN: "${PUSHPLUS_TOKEN:-}"
-      CONFIG_PUSHPLUS_TITLE: "MSRPilot"
-      CONFIG_PUSHPLUS_TEMPLATE: "html"
-      CONFIG_PUSHPLUS_CHANNEL: "wechat"
-
-      # ── Telegram 可选 ──
-      # CONFIG_TELEGRAM_ENABLED: "true"
-      # CONFIG_TELEGRAM_BOT_TOKEN: ""
-      # CONFIG_TELEGRAM_CHAT_ID: ""
-
-      # ── ntfy 可选 ──
-      # CONFIG_NTFY_ENABLED: "true"
-      # CONFIG_NTFY_URL: "https://ntfy.sh"
-      # CONFIG_NTFY_TOPIC: "my-rewards-alerts"
-      # CONFIG_NTFY_TOKEN: ""
-      # CONFIG_NTFY_TITLE: "MSRPilot"
-      # CONFIG_NTFY_PRIORITY: "3"
-
-    healthcheck:
-      test: ["CMD-SHELL", "scripts/docker/healthcheck.sh"]
-      interval: 60s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-
-    security_opt:
-      - no-new-privileges:true
-MSRPILOT_COMPOSE_TEMPLATE
+gh_fetch() { # $1=url $2=dest → 成功返回 0
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsSL --connect-timeout 10 --retry 2 -o "$2" "$1"
+    elif command -v wget >/dev/null 2>&1; then
+        wget -q -T 10 -t 2 -O "$2" "$1"
+    else
+        return 1
+    fi
 }
 
-COMPOSE_SOURCE="GitHub"
 if [ "$MODE" = "install" ]; then
-    _tmp_compose="$INSTALL_DIR/compose.yaml.tmp"
-    _fetch_ok=0
-    if command -v curl >/dev/null 2>&1; then
-        curl -fsSL --connect-timeout 10 --retry 2 -o "$_tmp_compose" "$COMPOSE_URL" && _fetch_ok=1
-    elif command -v wget >/dev/null 2>&1; then
-        wget -q -T 10 -t 2 -O "$_tmp_compose" "$COMPOSE_URL" && _fetch_ok=1
-    else
-        warn "未找到 curl / wget，无法下载 compose.yaml"
+    if ! gh_fetch "$COMPOSE_URL" "$INSTALL_DIR/compose.yaml" || ! grep -q '^services:' "$INSTALL_DIR/compose.yaml"; then
+        rm -f "$INSTALL_DIR/compose.yaml"
+        die "compose.yaml 下载失败，服务器无法访问 GitHub。
+      解决办法（任选其一）后重新运行本脚本:
+      1) 使用加速地址:  MSRPILOT_COMPOSE_URL=<加速链接> bash $0
+      2) 手动下载 compose.yaml 放入 ${INSTALL_DIR} 后重新运行"
     fi
-    if [ "$_fetch_ok" -eq 1 ] && grep -q '^services:' "$_tmp_compose"; then
-        mv -f "$_tmp_compose" "$INSTALL_DIR/compose.yaml"
-        ok "已从 GitHub 下载 compose.yaml: ${COMPOSE_URL}"
-    else
-        rm -f "$_tmp_compose"
-        COMPOSE_SOURCE="内置副本"
-        warn "下载失败，使用脚本内置的默认 compose.yaml（与仓库一致）"
-        write_compose_fallback "$INSTALL_DIR/compose.yaml"
+    ok "已下载 compose.yaml"
+
+    if ! gh_fetch "$ENV_URL" "$INSTALL_DIR/.env.example" || ! grep -q '^API_TOKEN=' "$INSTALL_DIR/.env.example"; then
+        rm -f "$INSTALL_DIR/.env.example"
+        die ".env 模板下载失败，服务器无法访问 GitHub。
+      解决办法（任选其一）后重新运行本脚本:
+      1) 使用加速地址:  MSRPILOT_ENV_URL=<加速链接> bash $0
+      2) 手动下载 env.example 放入 ${INSTALL_DIR} 并改名为 .env.example 后重新运行"
     fi
+    ok "已下载 .env 模板（.env.example）"
 fi
 
 ###############################################################################
@@ -527,44 +403,65 @@ if [ "$MODE" = "install" ]; then
 fi
 
 ###############################################################################
-# 4c. 写 .env（compose.yaml 通过 ${VAR} 插值读取）
+# 4c. 基于下载的 .env 模板填充配置（compose.yaml 通过 ${VAR} 插值读取）
 ###############################################################################
+# 向模板写入 KEY=VALUE：兼容模板里被注释的行（取消注释并赋值）；
+# 值中的 \ | & 会做 sed 转义，模板中没有的键则追加到文件末尾
+set_env_kv() { # $1=file $2=key $3=value
+    local esc
+    esc=$(printf '%s' "$3" | sed -e 's/[\\|&]/\\&/g')
+    if grep -qE "^#?${2}=" "$1"; then
+        sed -i -E "s/^#?(${2})=.*/\\1=${esc}/" "$1"
+    else
+        printf '%s\n' "$2=$3" >> "$1"
+    fi
+}
+
 write_env_file() {
     local f="$INSTALL_DIR/.env" i slot
     umask 077
-    : > "$f"
-    printf '%s\n' "# MSRPilot CN 配置（由 install.sh 生成，供 compose.yaml 的 \${VAR} 插值使用）" >> "$f"
-    printf '%s\n' "# 修改后执行: $COMPOSE up -d 使其生效" >> "$f"
-    printf '%s\n' "" >> "$f"
-    printf '%s\n' "# ── Web 管理台（compose.yaml 必填项，即使关闭管理台也要保留）──" >> "$f"
-    printf '%s\n' "API_TOKEN=${API_TOKEN_VALUE}" >> "$f"
-    printf '%s\n' "" >> "$f"
-    printf '%s\n' "# ── 授权 ─────────────────────────────────────────" >> "$f"
-    printf '%s\n' "LICENSE_KEY=${LICENSE_VALUE}" >> "$f"
-    printf '%s\n' "# 可选：手动固定机器码（换服务器/重建容器时保持授权不变）" >> "$f"
-    printf '%s\n' "#LICENSE_MACHINE_CODE=" >> "$f"
-    printf '%s\n' "" >> "$f"
-    printf '%s\n' "# ── 账号（仅前 2 个会透传进容器；第 3 个及以后请在 Web 管理台\"账号管理\"添加）──" >> "$f"
+    cp -f "$INSTALL_DIR/.env.example" "$f"
+    set_env_kv "$f" "API_TOKEN" "$API_TOKEN_VALUE"
+    set_env_kv "$f" "LICENSE_KEY" "$LICENSE_VALUE"
     i=0
     for email in "${ACC_EMAILS[@]}"; do
         slot=$((i + 1))
-        printf '%s\n' "ACCOUNT_${slot}_EMAIL=${email}" >> "$f"
-        [ -n "${ACC_PASS[$i]}" ] && printf '%s\n' "ACCOUNT_${slot}_PASSWORD=${ACC_PASS[$i]}" >> "$f"
-        [ -n "${ACC_TOTP[$i]}" ] && printf '%s\n' "ACCOUNT_${slot}_TOTP_SECRET=${ACC_TOTP[$i]}" >> "$f"
-        printf '%s\n' "#ACCOUNT_${slot}_RECOVERY_EMAIL=" >> "$f"
+        set_env_kv "$f" "ACCOUNT_${slot}_EMAIL" "$email"
+        set_env_kv "$f" "ACCOUNT_${slot}_PASSWORD" "${ACC_PASS[$i]}"
+        set_env_kv "$f" "ACCOUNT_${slot}_TOTP_SECRET" "${ACC_TOTP[$i]}"
+        set_env_kv "$f" "ACCOUNT_${slot}_ENABLED" "true"
         i=$((i + 1))
     done
-    printf '%s\n' "" >> "$f"
-    printf '%s\n' "# ── PushPlus 任务完成通知 ────────────────────────" >> "$f"
-    if [ -n "$PUSHPLUS_TOKEN_VALUE" ]; then
-        printf '%s\n' "PUSHPLUS_ENABLED=true" >> "$f"
-        printf '%s\n' "PUSHPLUS_TOKEN=${PUSHPLUS_TOKEN_VALUE}" >> "$f"
-    else
-        printf '%s\n' "#PUSHPLUS_ENABLED=true" >> "$f"
-        printf '%s\n' "#PUSHPLUS_TOKEN=" >> "$f"
-    fi
     umask 022
     chmod 600 "$f"
+}
+
+# 把 PushPlus 配置直接预置进 config/config.json（行为配置以 config.json 为唯一真源；
+# 容器首次启动时 ConfigSync 只会补充缺失键，不会覆盖这里写入的值）
+write_config_preseed() {
+    [ -n "$PUSHPLUS_TOKEN_VALUE" ] || return 0
+    mkdir -p "$INSTALL_DIR/config"
+    local f="$INSTALL_DIR/config/config.json"
+    if [ -f "$f" ]; then
+        info "config/config.json 已存在，跳过预置（PushPlus 可在管理台「脚本配置」里开启）"
+        return 0
+    fi
+    local token_escaped="${PUSHPLUS_TOKEN_VALUE//\\/\\\\}"
+    token_escaped="${token_escaped//\"/\\\"}"
+    cat > "$f" <<EOF
+{
+    "webhook": {
+        "pushplus": {
+            "enabled": true,
+            "token": "$token_escaped",
+            "title": "MSRPilot",
+            "template": "html",
+            "channel": "wechat"
+        }
+    }
+}
+EOF
+    info "已预置 config/config.json（PushPlus 通知已启用，可在管理台修改）"
 }
 
 if [ "$MODE" = "install" ]; then
@@ -573,16 +470,19 @@ if [ "$MODE" = "install" ]; then
         info "已备份旧配置 → .env.bak"
     fi
     write_env_file
+    write_config_preseed
     (cd "$INSTALL_DIR" && $SUDO $COMPOSE -f compose.yaml config -q) || die "compose.yaml 校验失败（含 .env 插值检查），请检查上方报错"
-    ok "配置就绪: ${INSTALL_DIR}/compose.yaml（来源: ${COMPOSE_SOURCE}）+ .env（权限 600）"
+    ok "配置就绪: ${INSTALL_DIR}/compose.yaml + .env（权限 600，模板来自 GitHub）"
 fi
 
 ###############################################################################
 # 5. 拉取镜像并启动
 ###############################################################################
 echo ""
-info "拉取镜像 ..."
-(cd "$INSTALL_DIR" && $SUDO $COMPOSE pull)
+info "拉取镜像（国内网络较慢属正常，重试会续传已完成的层）..."
+if ! (cd "$INSTALL_DIR" && $SUDO $COMPOSE pull); then
+    warn "镜像拉取失败——若你已通过加速站预拉取镜像（docker pull + tag 回原名），将直接使用本地镜像继续。"
+fi
 
 info "启动容器 ..."
 (cd "$INSTALL_DIR" && $SUDO $COMPOSE up -d)
