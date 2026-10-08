@@ -34,25 +34,33 @@ if [ -t 1 ]; then
 else
     C_G=''; C_Y=''; C_R=''; C_B=''; C_0=''
 fi
-info()  { printf "${C_B}[INFO]${C_0} %s\n" "$*"; }
-ok()    { printf "${C_G}[ OK ]${C_0} %s\n" "$*"; }
-warn()  { printf "${C_Y}[WARN]${C_0} %s\n" "$*"; }
-err()   { printf "${C_R}[FAIL]${C_0} %s\n" "$*" >&2; }
+
+# ── 输入净化 ────────────────────────────────────────────────────────────
+# 剥离回车符：CRLF 文件/粘贴内容混入的 \r 会让终端显示错乱（光标回行首），
+# 也会污染 docker tag 等命令参数（invalid reference format）。
+strip_cr() { printf '%s' "$1" | tr -d '\r'; }
+
+info()  { printf "${C_B}[INFO]${C_0} %s\n" "$(strip_cr "$*")"; }
+ok()    { printf "${C_G}[ OK ]${C_0} %s\n" "$(strip_cr "$*")"; }
+warn()  { printf "${C_Y}[WARN]${C_0} %s\n" "$(strip_cr "$*")"; }
+err()   { printf "${C_R}[FAIL]${C_0} %s\n" "$(strip_cr "$*")" >&2; }
 die()   { err "$*"; exit 1; }
 
 usage() { sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; }
 
 # ── 交互输入辅助 ────────────────────────────────────────────────────────
-ask() { # $1=提示 $2=默认值；EOF 回落默认值
-    local ans=""
-    read -r -p "$1 [$2]: " ans || ans=""
-    printf '%s' "${ans:-$2}"
+ask() { # $1=提示 $2=默认值；EOF 回落默认值；提示与回答均剥离 \r
+    local def ans=""
+    def="$(strip_cr "$2")"
+    read -r -p "$(strip_cr "$1") [$def]: " ans || ans=""
+    ans="$(strip_cr "$ans")"
+    printf '%s' "${ans:-$def}"
 }
 
 ask_yes() { # $1=提示 $2=y|n
     local ans
     while :; do
-        read -r -p "$1 [$2]: " ans || ans=""
+        read -r -p "$(strip_cr "$1") [$2]: " ans || ans=""
         ans="${ans:-$2}"
         case "$ans" in
             [Yy]|[Yy][Ee][Ss]) return 0 ;;
@@ -210,6 +218,9 @@ download_templates() {
       2) 指定完整链接:     MSRPILOT_COMPOSE_URL=<链接> bash $0
       3) 手动下载放入 ${INSTALL_DIR} 后重新运行"
     fi
+    # CRLF正規化: Windowsコミット由来のCRがIMAGE_REF等の変数に混入すると
+    # docker tag が "invalid reference format" で拒否するため、ここで落とす
+    sed -i 's/\r$//' "$INSTALL_DIR/compose.yaml"
     ok "已下载 compose.yaml"
     if ! gh_fetch_smart "$ENV_URL" "$INSTALL_DIR/.env.example" || ! grep -q '^API_TOKEN=' "$INSTALL_DIR/.env.example"; then
         rm -f "$INSTALL_DIR/.env.example"
@@ -218,6 +229,7 @@ download_templates() {
       2) 指定完整链接:     MSRPILOT_ENV_URL=<链接> bash $0
       3) 手动下载 env.example 放入 ${INSTALL_DIR} 并改名 .env.example 后重新运行"
     fi
+    sed -i 's/\r$//' "$INSTALL_DIR/.env.example"
     ok "已下载 .env 模板（.env.example）"
 }
 
@@ -298,7 +310,7 @@ patch_compose() { # 按向导选择对下载的 compose.yaml 做最小修改
 
     cmp -s "$COMPOSE_FILE" "$INSTALL_DIR/compose.yaml.orig" && rm -f "$INSTALL_DIR/compose.yaml.orig"
 
-    CONTAINER_NAME="$(grep -m1 'container_name:' "$COMPOSE_FILE" | awk '{print $2}' | tr -d '"' || true)"
+    CONTAINER_NAME="$(grep -m1 'container_name:' "$COMPOSE_FILE" | awk '{print $2}' | tr -d '"\r' || true)"
     CONTAINER_NAME="${CONTAINER_NAME:-msrpilot-cn}"
 }
 
@@ -332,7 +344,7 @@ do_uninstall() {
     fi
 
     local img
-    img="$(grep -m1 -E '^[[:space:]]*image:' "$INSTALL_DIR/compose.yaml" | awk '{print $2}' | tr -d '"' || true)"
+    img="$(grep -m1 -E '^[[:space:]]*image:' "$INSTALL_DIR/compose.yaml" | awk '{print $2}' | tr -d '"\r' || true)"
     if [ -n "$img" ] && ask_yes "同时删除镜像 ${img}？" n; then
         $SUDO docker rmi "$img" >/dev/null 2>&1 && ok "镜像已删除" || warn "镜像删除失败（可能被其他容器引用）"
     fi
@@ -524,7 +536,7 @@ do_install() {
 
     # 拉取镜像：全新安装且本地已有 → 跳过；同仓库其他标签（如 :latest）→ 询问标记复用；
     # 都没有 → 拉取（失败可继续用本地镜像）
-    IMAGE_REF="$(grep -m1 -E '^[[:space:]]*image:' "$COMPOSE_FILE" | awk '{print $2}' | tr -d '"' || true)"
+    IMAGE_REF="$(grep -m1 -E '^[[:space:]]*image:' "$COMPOSE_FILE" | awk '{print $2}' | tr -d '"\r' || true)"
     REPO="${IMAGE_REF%%:*}"
     echo ""
     if $SUDO docker image inspect "$IMAGE_REF" >/dev/null 2>&1; then
@@ -656,7 +668,7 @@ if [ "$MODE" = "upgrade" ]; then
     LICENSE_VALUE="$(grep -E '^LICENSE_KEY=' "$ENV_FILE" | tail -1 | cut -d= -f2- || true)"
     API_HOST_PORT="$(grep -oE '[0-9]+:3010' "$COMPOSE_FILE" | head -1 | cut -d: -f1 || true)"
     API_BIND=""
-    CONTAINER_NAME="$(grep -m1 'container_name:' "$COMPOSE_FILE" | awk '{print $2}' | tr -d '"' || true)"
+    CONTAINER_NAME="$(grep -m1 'container_name:' "$COMPOSE_FILE" | awk '{print $2}' | tr -d '"\r' || true)"
     CONTAINER_NAME="${CONTAINER_NAME:-msrpilot-cn}"
     echo ""
     echo "即将拉取新镜像并重建容器（.env / config.json / accounts.json 全部保留）。"
