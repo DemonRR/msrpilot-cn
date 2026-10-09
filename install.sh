@@ -402,12 +402,15 @@ collect_custom() {
         local n=${#ACC_EMAILS[@]}
         local slot=$((n + 1))
         local email
-        email="$(ask "  账号 ${slot} 邮箱（留空结束添加）" "")"
+        if [ "$n" -eq 0 ]; then
+            email="$(ask "  账号 ${slot} 邮箱（可留空，装完在管理台「账号管理」添加）" "")"
+        else
+            email="$(ask "  账号 ${slot} 邮箱（留空结束添加）" "")"
+        fi
         email="$(printf '%s' "$email" | tr -d ' \r')"
         if [ -z "$email" ]; then
             if [ "$n" -eq 0 ]; then
-                warn "至少需要 1 个账号，否则任务无法运行。"
-                continue
+                warn "未添加账号：装完请在 Web 管理台「账号管理」里添加并保存，否则任务无法运行。"
             fi
             break
         fi
