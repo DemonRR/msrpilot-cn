@@ -30,8 +30,6 @@ services:
       # ── 授权（Docker 与 Win GUI 授权不互通，按平台绑定）──
       # 留空 = 先用 24 小时免费试用；正式使用填授权码
       LICENSE_KEY: "${LICENSE_KEY:-}"
-      # 可选：手动固定机器码（换服务器/重建容器时保持授权不变，与 GUI 授权无关）
-      LICENSE_MACHINE_CODE: "${LICENSE_MACHINE_CODE:-}"
 
       # ── Web 管理台 ──
       # 浏览器打开 http://服务器IP:3010/ ；API_TOKEN 必须设置强随机值，否则拒绝启动
